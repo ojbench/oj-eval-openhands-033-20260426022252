@@ -17,15 +17,16 @@ private:
         
         node() : data(nullptr), prev(nullptr), next(nullptr) {}
         
-        explicit node(const T &value) : data(nullptr), prev(nullptr), next(nullptr) {
-            data = static_cast<T*>(::operator new(sizeof(T)));
-            new (data) T(value);
+        explicit node(const T &value, std::allocator<T> &alloc) : data(nullptr), prev(nullptr), next(nullptr) {
+            data = alloc.allocate(1);
+            std::allocator_traits<std::allocator<T>>::construct(alloc, data, value);
         }
         
-        ~node() {
+        void destroy(std::allocator<T> &alloc) {
             if (data) {
-                data->~T();
-                ::operator delete(data);
+                std::allocator_traits<std::allocator<T>>::destroy(alloc, data);
+                alloc.deallocate(data, 1);
+                data = nullptr;
             }
         }
     };
@@ -33,10 +34,14 @@ private:
     node *head;
     node *tail;
     size_t _size;
+    std::allocator<T> t_alloc;
+    std::allocator<node> node_alloc;
     
     void init() {
-        head = new node();
-        tail = new node();
+        head = node_alloc.allocate(1);
+        tail = node_alloc.allocate(1);
+        std::allocator_traits<std::allocator<node>>::construct(node_alloc, head);
+        std::allocator_traits<std::allocator<node>>::construct(node_alloc, tail);
         head->next = tail;
         tail->prev = head;
         _size = 0;
@@ -44,8 +49,10 @@ private:
     
     void destroy() {
         clear();
-        delete head;
-        delete tail;
+        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, head);
+        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, tail);
+        node_alloc.deallocate(head, 1);
+        node_alloc.deallocate(tail, 1);
     }
 
 public:
@@ -235,7 +242,9 @@ public:
         node *p = head->next;
         while (p != tail) {
             node *next = p->next;
-            delete p;
+            p->destroy(t_alloc);
+            std::allocator_traits<std::allocator<node>>::destroy(node_alloc, p);
+            node_alloc.deallocate(p, 1);
             p = next;
         }
         head->next = tail;
@@ -244,7 +253,11 @@ public:
     }
     
     iterator insert(iterator pos, const T &value) {
-        node *new_node = new node(value);
+        node *new_node = node_alloc.allocate(1);
+        std::allocator_traits<std::allocator<node>>::construct(node_alloc, new_node);
+        new_node->data = t_alloc.allocate(1);
+        std::allocator_traits<std::allocator<T>>::construct(t_alloc, new_node->data, value);
+        
         node *pos_node = pos.ptr;
         node *prev_node = pos_node->prev;
         
@@ -265,7 +278,9 @@ public:
         prev_node->next = next_node;
         next_node->prev = prev_node;
         
-        delete pos_node;
+        pos_node->destroy(t_alloc);
+        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, pos_node);
+        node_alloc.deallocate(pos_node, 1);
         --_size;
         
         return iterator(next_node);
