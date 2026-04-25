@@ -11,37 +11,31 @@ template <typename T>
 class list {
 private:
     struct node {
-        T *data;
         node *prev;
         node *next;
+        alignas(T) char data[sizeof(T)];
         
-        node() : data(nullptr), prev(nullptr), next(nullptr) {}
+        node() : prev(nullptr), next(nullptr) {}
         
-        explicit node(const T &value, std::allocator<T> &alloc) : data(nullptr), prev(nullptr), next(nullptr) {
-            data = alloc.allocate(1);
-            std::allocator_traits<std::allocator<T>>::construct(alloc, data, value);
+        T* get_data() {
+            return reinterpret_cast<T*>(data);
         }
         
-        void destroy(std::allocator<T> &alloc) {
-            if (data) {
-                std::allocator_traits<std::allocator<T>>::destroy(alloc, data);
-                alloc.deallocate(data, 1);
-                data = nullptr;
-            }
+        const T* get_data() const {
+            return reinterpret_cast<const T*>(data);
         }
     };
     
     node *head;
     node *tail;
     size_t _size;
-    std::allocator<T> t_alloc;
     std::allocator<node> node_alloc;
     
     void init() {
         head = node_alloc.allocate(1);
         tail = node_alloc.allocate(1);
-        std::allocator_traits<std::allocator<node>>::construct(node_alloc, head);
-        std::allocator_traits<std::allocator<node>>::construct(node_alloc, tail);
+        new (head) node();
+        new (tail) node();
         head->next = tail;
         tail->prev = head;
         _size = 0;
@@ -49,8 +43,8 @@ private:
     
     void destroy() {
         clear();
-        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, head);
-        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, tail);
+        head->~node();
+        tail->~node();
         node_alloc.deallocate(head, 1);
         node_alloc.deallocate(tail, 1);
     }
@@ -91,11 +85,11 @@ public:
         }
         
         T &operator*() const noexcept {
-            return *(ptr->data);
+            return *ptr->get_data();
         }
         
         T *operator->() const noexcept {
-            return ptr->data;
+            return ptr->get_data();
         }
         
         friend bool operator==(const iterator &a, const iterator &b) {
@@ -149,11 +143,11 @@ public:
         }
         
         const T &operator*() const noexcept {
-            return *(ptr->data);
+            return *ptr->get_data();
         }
         
         const T *operator->() const noexcept {
-            return ptr->data;
+            return ptr->get_data();
         }
         
         friend bool operator==(const const_iterator &a, const const_iterator &b) {
@@ -181,7 +175,7 @@ public:
     list(const list &other) {
         init();
         for (node *p = other.head->next; p != other.tail; p = p->next) {
-            push_back(*(p->data));
+            push_back(*p->get_data());
         }
     }
     
@@ -189,7 +183,7 @@ public:
         if (this == &other) return *this;
         clear();
         for (node *p = other.head->next; p != other.tail; p = p->next) {
-            push_back(*(p->data));
+            push_back(*p->get_data());
         }
         return *this;
     }
@@ -199,19 +193,19 @@ public:
     }
     
     T &front() noexcept {
-        return *(head->next->data);
+        return *head->next->get_data();
     }
     
     T &back() noexcept {
-        return *(tail->prev->data);
+        return *tail->prev->get_data();
     }
     
     const T &front() const noexcept {
-        return *(head->next->data);
+        return *head->next->get_data();
     }
     
     const T &back() const noexcept {
-        return *(tail->prev->data);
+        return *tail->prev->get_data();
     }
     
     iterator begin() noexcept {
@@ -242,8 +236,8 @@ public:
         node *p = head->next;
         while (p != tail) {
             node *next = p->next;
-            p->destroy(t_alloc);
-            std::allocator_traits<std::allocator<node>>::destroy(node_alloc, p);
+            p->get_data()->~T();
+            p->~node();
             node_alloc.deallocate(p, 1);
             p = next;
         }
@@ -254,9 +248,8 @@ public:
     
     iterator insert(iterator pos, const T &value) {
         node *new_node = node_alloc.allocate(1);
-        std::allocator_traits<std::allocator<node>>::construct(node_alloc, new_node);
-        new_node->data = t_alloc.allocate(1);
-        std::allocator_traits<std::allocator<T>>::construct(t_alloc, new_node->data, value);
+        new (new_node) node();
+        new (new_node->get_data()) T(value);
         
         node *pos_node = pos.ptr;
         node *prev_node = pos_node->prev;
@@ -278,8 +271,8 @@ public:
         prev_node->next = next_node;
         next_node->prev = prev_node;
         
-        pos_node->destroy(t_alloc);
-        std::allocator_traits<std::allocator<node>>::destroy(node_alloc, pos_node);
+        pos_node->get_data()->~T();
+        pos_node->~node();
         node_alloc.deallocate(pos_node, 1);
         --_size;
         
