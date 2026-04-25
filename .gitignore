@@ -1,0 +1,13 @@
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+code
+*.o
+*.out
+*.exe
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
